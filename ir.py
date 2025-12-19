@@ -5,7 +5,7 @@ from pprint import pprint
 import wadze
 
 @dataclass
-class Prod:
+class IRProd:
     prod: str
     imm_args: Any
     invars: List[str]
@@ -13,10 +13,6 @@ class Prod:
 
 simple_prods = {
     # stack_argc, stack_ret
-    'unreachable': (0, False),
-    'nop': (0, False),
-    'drop': (1, False),
-    'select': (3, True),
     'i32.const': (0, True),
     'i64.const': (0, True),
     'f32.const': (0, True),
@@ -62,34 +58,34 @@ def parse_block(func_type, instrs):
 
             invars = pop_temps(stack_argc)
             outvar = push_temp() if stack_ret else None
-            prod = Prod(name, imm_args, invars, outvar)
+            prod = IRProd(name, imm_args, invars, outvar)
         elif name == 'local.set':
             local_idx, = args
             outvar = f'l{local_idx}'
-            prod = Prod(name, (), pop_temps(1), outvar)
+            prod = IRProd(name, (), pop_temps(1), outvar)
         elif name == 'local.get':
             local_idx, = args
             outvar = push_temp()
-            prod = Prod(name, (), [], outvar)
+            prod = IRProd(name, (), [], outvar)
         elif name == 'block':
             outtype, body = args
             body_prods = parse_block(func_type, body)
             outvar = push_temp() if outtype is not None else None
-            prod = Prod(name, (body_prods), [], outvar)
+            prod = IRProd(name, (body_prods), [], outvar)
         elif name == 'loop':
             outtype, body = args
             body_prods = parse_block(func_type, body)
             outvar = push_temp() if outtype is not None else None
-            prod = Prod(name, (body_prods), [], outvar)
+            prod = IRProd(name, (body_prods), [], outvar)
         elif name == 'if':
             outtype, (if_body, else_body) = args
             if_body_prods = parse_block(func_type, if_body)
             else_body_prods = parse_block(func_type, else_body)
             outvar = push_temp() if outtype is not None else None
-            prod = Prod(name, (if_body_prods, else_body_prods), pop_temps(1), outvar)
+            prod = IRProd(name, (if_body_prods, else_body_prods), pop_temps(1), outvar)
         elif name == 'return':
             ret_argc = len(func_type.returns)
-            prod = Prod(name, (), pop_temps(ret_argc), None)
+            prod = IRProd(name, (), pop_temps(ret_argc), None)
         else:
             raise NotImplementedError(f"Instruction '{name}' not implemented.")
 
