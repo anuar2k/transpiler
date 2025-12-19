@@ -1,4 +1,5 @@
 from pathlib import Path
+from pprint import pprint
 import wadze
 
 ROOT_DIR = Path(__file__).parent
@@ -52,10 +53,36 @@ def format_code(code, indent=0):
     '''
     lines = []
     if code.locals:
-        lines.append(' ' * (indent * 2) + f'(locals {" ".join(code.locals)})')
+        lines.append(' ' * (indent * 2) + f'(local {" ".join(code.locals)})')
 
     for instruction in code.instructions:
         lines.extend(_format_instruction(instruction, indent))
+
+    return '\n'.join(lines)
+
+def format_function(func_idx, code, module):
+    '''
+    Format a function with its signature and body in WAT-like format.
+    func_idx: index of the function in the module
+    code: Code namedtuple with (locals, instructions)
+    module: parsed WASM module dict
+    Returns formatted string representation of the function.
+    '''
+    func_type_idx = module.get('func', [])[func_idx] if func_idx < len(module.get('func', [])) else 0
+    func_type = module.get('type', [])[func_type_idx] if func_type_idx < len(module.get('type', [])) else None
+
+    if not func_type:
+        return f";; Function {func_idx} has unknown type\n"
+
+    params_str = ' '.join(func_type.params)
+    results_str = ' '.join(func_type.returns) if func_type.returns else ''
+    result_clause = f' (result {results_str})' if results_str else ''
+
+    lines = [f'(func (type {func_type_idx}) (param {params_str}){result_clause}']
+    body_str = format_code(code, indent=1)
+    if body_str:
+        lines.append(body_str)
+    lines.append(')')
 
     return '\n'.join(lines)
 
@@ -72,38 +99,35 @@ def _format_instruction(instruction, indent):
     if name == 'block':
         result_type, body = args
         type_str = f' {result_type}' if result_type else ''
-        lines.append(f'{indent_str}(block{type_str}')
+        lines.append(f'{indent_str}block{type_str}')
         for instr in body:
             lines.extend(_format_instruction(instr, indent + 1))
-        lines.append(f'{indent_str})')
+        lines.append(f'{indent_str}end')
     elif name == 'loop':
         result_type, body = args
         type_str = f' {result_type}' if result_type else ''
-        lines.append(f'{indent_str}(loop{type_str}')
+        lines.append(f'{indent_str}loop{type_str}')
         for instr in body:
             lines.extend(_format_instruction(instr, indent + 1))
-        lines.append(f'{indent_str})')
+        lines.append(f'{indent_str}end')
     elif name == 'if':
         result_type, (then_body, else_body) = args
         type_str = f' {result_type}' if result_type else ''
-        lines.append(f'{indent_str}(if{type_str}')
-        lines.append(f'{indent_str}  (then')
+        lines.append(f'{indent_str}if{type_str}')
         for instr in then_body:
-            lines.extend(_format_instruction(instr, indent + 2))
-        lines.append(f'{indent_str}  )')
+            lines.extend(_format_instruction(instr, indent + 1))
         if else_body:
-            lines.append(f'{indent_str}  (else')
+            lines.append(f'{indent_str}else')
             for instr in else_body:
-                lines.extend(_format_instruction(instr, indent + 2))
-            lines.append(f'{indent_str}  )')
-        lines.append(f'{indent_str})')
+                lines.extend(_format_instruction(instr, indent + 1))
+        lines.append(f'{indent_str}end')
     else:
         # Simple instruction with optional arguments
         if args:
             args_str = ' ' + ' '.join(str(arg) for arg in args)
         else:
             args_str = ''
-        lines.append(f'{indent_str}({name}{args_str})')
+        lines.append(f'{indent_str}{name}{args_str}')
 
     return lines
 
@@ -328,18 +352,16 @@ with open(ROOT_DIR / "input.wasm", "rb") as f:
     module = wadze.parse_module(f.read())
     module['code'] = [wadze.parse_code(c) for c in module['code']]
 
-# print(module)
+pprint(module)
+function_start = len(module['import'])
 
-# Print code sections with WAT-like formatting
-for i, code in enumerate(module.get('code', [])):
-    print(f"\n=== Function {i} (WAT) ===")
-    print(format_code(code))
+def print_wat_and_ssa(func_idx):
+    print(f"\n=== Function {func_idx} (WAT) ===")
+    print(format_function(func_idx - function_start, module['code'][func_idx - function_start], module))
 
-print(f"\n=== Function 0 (WAT) ===")
-print(format_code(module['code'][0]))
+    print(f"\n=== Function {func_idx} (SSA) ===")
+    if module.get('code'):
+        ssa_code = generate_ssa(module['code'][func_idx - function_start], func_idx, module)
+        print(ssa_code)
 
-# Generate SSA form for function 0 (which has no blocks)
-print("\n=== Function 0 (SSA) ===")
-if module.get('code'):
-    ssa_code = generate_ssa(module['code'][0], 0, module)
-    print(ssa_code)
+print_wat_and_ssa(4)
